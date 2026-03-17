@@ -570,7 +570,7 @@ class _InfoCard extends StatelessWidget {
             width: 46,
             height: 46,
             decoration: BoxDecoration(
-              color: accent.withOpacity(0.14),
+              color: accent.withValues(alpha: 0.14),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Icon(icon, color: accent),
@@ -676,7 +676,7 @@ class _StatusTile extends StatelessWidget {
             width: 46,
             height: 46,
             decoration: BoxDecoration(
-              color: accent.withOpacity(0.14),
+              color: accent.withValues(alpha: 0.14),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Icon(icon, color: accent),
