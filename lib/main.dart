@@ -10,7 +10,13 @@ import 'firebase_options.dart';
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  debugPrint('Handling background message: ${message.messageId}');
+
+  // Ensure local notifications are available in the background isolate.
+  await NotificationService.initializeBackground();
+
+  // For data-only messages, Android will not automatically display a notification.
+  // Show one manually if the payload contains displayable content.
+  await NotificationService.showBackgroundNotificationIfNeeded(message);
 }
 
 Future<void> main() async {

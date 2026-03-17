@@ -5,9 +5,9 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 
 class HomePage extends StatefulWidget {
-  final VoidCallback onOpenAdmin;
+  final VoidCallback onOpenSystem;
 
-  const HomePage({super.key, required this.onOpenAdmin});
+  const HomePage({super.key, required this.onOpenSystem});
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -19,7 +19,6 @@ class _HomePageState extends State<HomePage> {
   Stream<DocumentSnapshot<Map<String, dynamic>>>? _statusStream;
   Stream<QuerySnapshot<Map<String, dynamic>>>? _historyStream;
 
-  DateTime? _resolvedUntilLocal;
   static const int resolvedSeconds = 5;
 
   @override
@@ -48,11 +47,6 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  bool get _isInResolvedWindow {
-    if (_resolvedUntilLocal == null) return false;
-    return DateTime.now().isBefore(_resolvedUntilLocal!);
-  }
-
   String timeAgoFromIso(String? iso) {
     if (iso == null || iso.isEmpty) return 'Unknown';
     try {
@@ -70,9 +64,29 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  _StatusUi _computeStatusUi(String rawStatus) {
+  DateTime? _parseIsoToLocal(String? iso) {
+    if (iso == null || iso.isEmpty) return null;
+    try {
+      return DateTime.parse(iso).toLocal();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool _isRecentlyResolved(String rawStatus, String? updatedAtIso) {
+    if (rawStatus != 'ended') return false;
+
+    final updatedAt = _parseIsoToLocal(updatedAtIso);
+    if (updatedAt == null) return false;
+
+    final diff = DateTime.now().difference(updatedAt);
+
+    if (diff.isNegative) return true;
+    return diff.inSeconds < resolvedSeconds;
+  }
+
+  _StatusUi _computeStatusUi(String rawStatus, String? updatedAtIso) {
     if (rawStatus == 'started') {
-      _resolvedUntilLocal = null;
       return const _StatusUi(
         headline: 'UNSAFE EVENT',
         label: 'Live alert',
@@ -82,20 +96,14 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
-    if (rawStatus == 'ended') {
-      _resolvedUntilLocal ??= DateTime.now().add(
-        const Duration(seconds: resolvedSeconds),
+    if (_isRecentlyResolved(rawStatus, updatedAtIso)) {
+      return const _StatusUi(
+        headline: 'RESOLVED',
+        label: 'Alert cleared',
+        accent: AppColors.success,
+        accentSoft: AppColors.successSoft,
+        icon: Icons.check_circle_rounded,
       );
-
-      if (_isInResolvedWindow) {
-        return const _StatusUi(
-          headline: 'RESOLVED',
-          label: 'Alert cleared',
-          accent: AppColors.success,
-          accentSoft: AppColors.successSoft,
-          icon: Icons.check_circle_rounded,
-        );
-      }
     }
 
     return const _StatusUi(
@@ -105,6 +113,18 @@ class _HomePageState extends State<HomePage> {
       accentSoft: AppColors.warningSoft,
       icon: Icons.remove_red_eye_rounded,
     );
+  }
+
+  String _statusDescription(String rawStatus, String? updatedAtIso) {
+    if (rawStatus == 'started') {
+      return 'Unsafe hallway activity needs immediate attention.';
+    }
+
+    if (_isRecentlyResolved(rawStatus, updatedAtIso)) {
+      return 'The latest alert has ended and the system is back to watch mode.';
+    }
+
+    return 'System is actively monitoring hallway activity for unsafe events.';
   }
 
   int _cameraCount(dynamic camerasSeen) {
@@ -178,8 +198,9 @@ class _HomePageState extends State<HomePage> {
               statusData?['total_camera_count'],
             );
 
-            final statusUi = _computeStatusUi(rawStatus);
+            final statusUi = _computeStatusUi(rawStatus, updatedAtIso);
             final updatedText = timeAgoFromIso(updatedAtIso);
+            final description = _statusDescription(rawStatus, updatedAtIso);
 
             return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
               stream: _historyStream,
@@ -233,7 +254,7 @@ class _HomePageState extends State<HomePage> {
                         ),
                         const SizedBox(width: 12),
                         GestureDetector(
-                          onTap: widget.onOpenAdmin,
+                          onTap: widget.onOpenSystem,
                           child: Container(
                             width: 44,
                             height: 44,
@@ -243,7 +264,7 @@ class _HomePageState extends State<HomePage> {
                               border: Border.all(color: AppColors.stroke),
                             ),
                             child: const Icon(
-                              Icons.admin_panel_settings_rounded,
+                              Icons.settings_input_component_rounded,
                               color: AppColors.textPrimary,
                             ),
                           ),
@@ -251,7 +272,6 @@ class _HomePageState extends State<HomePage> {
                       ],
                     ),
                     const SizedBox(height: 20),
-
                     Container(
                       padding: EdgeInsets.all(isSmallPhone ? 18 : 20),
                       decoration: BoxDecoration(
@@ -309,11 +329,7 @@ class _HomePageState extends State<HomePage> {
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
-                                  rawStatus == 'started'
-                                      ? 'Unsafe hallway activity needs immediate attention.'
-                                      : rawStatus == 'ended'
-                                      ? 'The latest alert has ended and the system is back to watch mode.'
-                                      : 'System is actively monitoring hallway activity for unsafe events.',
+                                  description,
                                   style: text.bodyMedium?.copyWith(
                                     color: AppColors.textSecondary,
                                     height: 1.5,
@@ -348,9 +364,7 @@ class _HomePageState extends State<HomePage> {
                               ],
                             ),
                     ),
-
                     const SizedBox(height: 16),
-
                     Row(
                       children: [
                         Expanded(
@@ -370,9 +384,7 @@ class _HomePageState extends State<HomePage> {
                         ),
                       ],
                     ),
-
                     const SizedBox(height: 12),
-
                     _StatTile(
                       title: _cameraOnlineTitle(
                         onlineCameraCount,
@@ -382,9 +394,7 @@ class _HomePageState extends State<HomePage> {
                       icon: Icons.videocam_rounded,
                       fullWidth: true,
                     ),
-
                     const SizedBox(height: 24),
-
                     Row(
                       children: [
                         Expanded(
@@ -398,9 +408,7 @@ class _HomePageState extends State<HomePage> {
                         ),
                       ],
                     ),
-
                     const SizedBox(height: 14),
-
                     if (historySnap.hasError)
                       const _SimpleInfoCard(
                         text: 'Could not load recent events.',
