@@ -33,10 +33,7 @@ class _AppShellState extends State<AppShell> {
           setState(() => _currentIndex = index);
         },
         destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_rounded),
-            label: 'Home',
-          ),
+          NavigationDestination(icon: Icon(Icons.home_rounded), label: 'Home'),
           NavigationDestination(
             icon: Icon(Icons.warning_amber_rounded),
             label: 'Alerts',
