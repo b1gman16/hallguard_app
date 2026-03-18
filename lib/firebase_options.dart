@@ -68,4 +68,5 @@ class DefaultFirebaseOptions {
     databaseURL: 'https://hallguard-default-rtdb.firebaseio.com',
     storageBucket: 'hallguard.firebasestorage.app',
   );
+
 }
