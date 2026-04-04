@@ -5,9 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 
 class HomePage extends StatefulWidget {
-  final VoidCallback onOpenSystem;
-
-  const HomePage({super.key, required this.onOpenSystem});
+  const HomePage({super.key});
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -231,43 +229,20 @@ class _HomePageState extends State<HomePage> {
                 return ListView(
                   padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
                   children: [
-                    Row(
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'HallGuard',
-                                style: text.headlineSmall?.copyWith(
-                                  fontSize: isSmallPhone ? 24 : 26,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Hallway Safety Monitoring',
-                                style: text.bodyMedium,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
+                        Text(
+                          'HallGuard',
+                          style: text.headlineSmall?.copyWith(
+                            fontSize: isSmallPhone ? 24 : 26,
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        GestureDetector(
-                          onTap: widget.onOpenSystem,
-                          child: Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              color: AppColors.surface,
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: AppColors.stroke),
-                            ),
-                            child: const Icon(
-                              Icons.settings_input_component_rounded,
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Hallway Safety Monitoring',
+                          style: text.bodyMedium,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
