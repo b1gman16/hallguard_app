@@ -14,11 +14,19 @@ class SystemPage extends StatefulWidget {
 }
 
 class _SystemPageState extends State<SystemPage> {
+  static const Duration _systemFreshnessThreshold = Duration(minutes: 1);
+  static const Duration _firebaseCheckInterval = Duration(seconds: 5);
+  static const Duration _firebaseCheckTimeout = Duration(seconds: 4);
+
   Timer? _ticker;
+  Timer? _firebasePingTimer;
 
   Stream<DocumentSnapshot<Map<String, dynamic>>>? _statusStream;
   Stream<QuerySnapshot<Map<String, dynamic>>>? _historyStream;
   Future<NotificationSettings>? _notificationSettingsFuture;
+
+  bool _isFirebaseReachable = true;
+  bool _isCheckingFirebase = true;
 
   @override
   void initState() {
@@ -41,41 +49,83 @@ class _SystemPageState extends State<SystemPage> {
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
+
+    _startFirebaseReachabilityChecks();
   }
 
   @override
   void dispose() {
     _ticker?.cancel();
+    _firebasePingTimer?.cancel();
     super.dispose();
   }
 
-  String timeAgoFromIso(String? iso) {
-    if (iso == null || iso.isEmpty) return 'Unknown';
-    try {
-      final dt = DateTime.parse(iso).toLocal();
-      final diff = DateTime.now().difference(dt);
+  void _startFirebaseReachabilityChecks() {
+    _checkFirebaseReachability();
 
-      if (diff.isNegative) return 'Just now';
-      if (diff.inSeconds < 5) return 'Just now';
-      if (diff.inSeconds < 60) return '${diff.inSeconds}s ago';
-      if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-      if (diff.inHours < 24) return '${diff.inHours}h ago';
-      return '${diff.inDays}d ago';
+    _firebasePingTimer = Timer.periodic(_firebaseCheckInterval, (_) {
+      _checkFirebaseReachability();
+    });
+  }
+
+  Future<void> _checkFirebaseReachability() async {
+    if (mounted) {
+      setState(() {
+        _isCheckingFirebase = true;
+      });
+    }
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('status')
+          .doc('current')
+          .get(const GetOptions(source: Source.server))
+          .timeout(_firebaseCheckTimeout);
+
+      if (!mounted) return;
+      setState(() {
+        _isFirebaseReachable = true;
+        _isCheckingFirebase = false;
+      });
     } catch (_) {
-      return 'Unknown';
+      if (!mounted) return;
+      setState(() {
+        _isFirebaseReachable = false;
+        _isCheckingFirebase = false;
+      });
     }
   }
 
-  int? _parseInt(dynamic value) {
-    if (value == null) return null;
-    if (value is int) return value;
-    if (value is double) return value.toInt();
-    return int.tryParse(value.toString());
+  String timeAgoFromIso(String? iso) {
+    final dt = _parseIsoDateTime(iso);
+    if (dt == null) return 'Unknown';
+
+    final diff = DateTime.now().difference(dt);
+
+    if (diff.isNegative) return 'Just now';
+    if (diff.inSeconds < 5) return 'Just now';
+    if (diff.inSeconds < 60) return '${diff.inSeconds}s ago';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
   }
 
-  String _cameraRatio(int? online, int? total) {
-    if (online == null || total == null) return '--';
-    return '$online/$total';
+  DateTime? _parseIsoDateTime(String? iso) {
+    if (iso == null || iso.isEmpty) return null;
+    try {
+      return DateTime.parse(iso).toLocal();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool _isStaleIso(
+    String? iso, {
+    Duration threshold = _systemFreshnessThreshold,
+  }) {
+    final dt = _parseIsoDateTime(iso);
+    if (dt == null) return true;
+    return DateTime.now().difference(dt) > threshold;
   }
 
   _StatusView _notificationStatus(NotificationSettings settings) {
@@ -111,42 +161,30 @@ class _SystemPageState extends State<SystemPage> {
     }
   }
 
-  _StatusView _firebaseConnectionStatus(
-    AsyncSnapshot<DocumentSnapshot<Map<String, dynamic>>> snapshot,
-  ) {
-    if (snapshot.hasError) {
-      return const _StatusView(
-        label: 'Error',
-        subtitle: 'Could not read the live system status document',
-        color: AppColors.danger,
-        icon: Icons.cloud_off_rounded,
-      );
-    }
-
-    if (snapshot.connectionState == ConnectionState.waiting) {
+  _StatusView _firebaseConnectionStatus() {
+    if (_isCheckingFirebase) {
       return const _StatusView(
         label: 'Checking',
-        subtitle: 'Connecting to Firestore...',
+        subtitle: 'Testing live Firebase reachability...',
         color: AppColors.warning,
         icon: Icons.cloud_sync_rounded,
       );
     }
 
-    final data = snapshot.data?.data();
-    if (data == null) {
+    if (_isFirebaseReachable) {
       return const _StatusView(
-        label: 'Unavailable',
-        subtitle: 'No system status document was found',
-        color: AppColors.warning,
-        icon: Icons.cloud_off_rounded,
+        label: 'Connected',
+        subtitle: 'The app can currently reach Firebase',
+        color: AppColors.success,
+        icon: Icons.cloud_done_rounded,
       );
     }
 
     return const _StatusView(
-      label: 'Connected',
-      subtitle: 'Live status data is being read successfully',
-      color: AppColors.success,
-      icon: Icons.cloud_done_rounded,
+      label: 'Disconnected',
+      subtitle: 'The app cannot currently reach Firebase',
+      color: AppColors.danger,
+      icon: Icons.cloud_off_rounded,
     );
   }
 
@@ -156,6 +194,15 @@ class _SystemPageState extends State<SystemPage> {
         value: 'Unavailable',
         context: 'System status could not be determined',
         color: AppColors.warning,
+      );
+    }
+
+    final updatedAt = data['updated_at']?.toString();
+    if (_isStaleIso(updatedAt)) {
+      return const _OverviewStatus(
+        value: 'Offline',
+        context: 'No fresh system updates are being received',
+        color: AppColors.danger,
       );
     }
 
@@ -212,17 +259,8 @@ class _SystemPageState extends State<SystemPage> {
             final updatedAt = statusData?['updated_at']?.toString();
             final location = (statusData?['location_id'] ?? 'Unknown location')
                 .toString();
-            final confirmedDual = statusData?['confirmed_dual'] == true;
-            final handoff = statusData?['handoff'] == true;
 
-            final onlineCameraCount = _parseInt(
-              statusData?['online_camera_count'],
-            );
-            final totalCameraCount = _parseInt(
-              statusData?['total_camera_count'],
-            );
-
-            final firebaseStatus = _firebaseConnectionStatus(statusSnap);
+            final firebaseStatus = _firebaseConnectionStatus();
             final overviewStatus = _overviewStatus(statusData);
             final lastSync = timeAgoFromIso(updatedAt);
 
@@ -235,13 +273,6 @@ class _SystemPageState extends State<SystemPage> {
                     .where(
                       (doc) =>
                           (doc.data()['status'] ?? '').toString() == 'started',
-                    )
-                    .length;
-
-                final resolvedAlerts = docs
-                    .where(
-                      (doc) =>
-                          (doc.data()['status'] ?? '').toString() == 'ended',
                     )
                     .length;
 
@@ -299,18 +330,6 @@ class _SystemPageState extends State<SystemPage> {
                               icon: Icons.insights_rounded,
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _SummaryMetric(
-                              title: _cameraRatio(
-                                onlineCameraCount,
-                                totalCameraCount,
-                              ),
-                              label: 'Cameras',
-                              accent: AppColors.success,
-                              icon: Icons.videocam_rounded,
-                            ),
-                          ),
                         ],
                       ),
                     ),
@@ -346,43 +365,6 @@ class _SystemPageState extends State<SystemPage> {
                       subtitle: 'Most recent status update from Firestore',
                       icon: Icons.schedule_rounded,
                       accent: AppColors.primary,
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    Text('Verification Status', style: text.titleLarge),
-                    const SizedBox(height: 12),
-
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _MiniStatusCard(
-                            title: 'Dual Camera',
-                            value: confirmedDual
-                                ? 'Confirmed'
-                                : 'Not Confirmed',
-                            icon: confirmedDual
-                                ? Icons.verified_rounded
-                                : Icons.videocam_outlined,
-                            accent: confirmedDual
-                                ? AppColors.success
-                                : AppColors.warning,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _MiniStatusCard(
-                            title: 'Handoff',
-                            value: handoff ? 'Used' : 'Not Used',
-                            icon: handoff
-                                ? Icons.swap_horiz_rounded
-                                : Icons.horizontal_rule_rounded,
-                            accent: handoff
-                                ? AppColors.primary
-                                : AppColors.warning,
-                          ),
-                        ),
-                      ],
                     ),
 
                     const SizedBox(height: 24),
@@ -435,32 +417,6 @@ class _SystemPageState extends State<SystemPage> {
                           accent: notifStatus.color,
                         );
                       },
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    Text('Operational Summary', style: text.titleLarge),
-                    const SizedBox(height: 12),
-
-                    _InfoCard(
-                      title: 'Resolved Alerts',
-                      value: '$resolvedAlerts in recent activity',
-                      subtitle:
-                          'Resolved events within the recent activity window',
-                      icon: Icons.check_circle_rounded,
-                      accent: AppColors.success,
-                    ),
-                    const SizedBox(height: 12),
-
-                    _InfoCard(
-                      title: 'Recent Event Feed',
-                      value: docs.isEmpty
-                          ? 'No recent events available'
-                          : '${docs.length} recent records loaded',
-                      subtitle:
-                          'Latest event records currently loaded in the app',
-                      icon: Icons.history_rounded,
-                      accent: AppColors.primary,
                     ),
 
                     if (statusSnap.hasError || historySnap.hasError) ...[
@@ -600,44 +556,6 @@ class _InfoCard extends StatelessWidget {
               ],
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MiniStatusCard extends StatelessWidget {
-  final String title;
-  final String value;
-  final IconData icon;
-  final Color accent;
-
-  const _MiniStatusCard({
-    required this.title,
-    required this.value,
-    required this.icon,
-    required this.accent,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: AppColors.stroke),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: accent, size: 20),
-          const SizedBox(height: 14),
-          Text(title, style: text.titleMedium),
-          const SizedBox(height: 6),
-          Text(value, style: text.bodyMedium),
         ],
       ),
     );

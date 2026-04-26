@@ -220,8 +220,8 @@ class _AlertsPageState extends State<AlertsPage> {
                     text: _filter == _AlertFilter.all
                         ? 'No alerts yet.'
                         : _filter == _AlertFilter.active
-                        ? 'No active alerts right now.'
-                        : 'No resolved alerts yet.',
+                            ? 'No active alerts right now.'
+                            : 'No resolved alerts yet.',
                   )
                 else
                   ...filteredDocs.map((doc) {
@@ -235,9 +235,6 @@ class _AlertsPageState extends State<AlertsPage> {
                     final when = timeAgoFromIso(loggedAt);
 
                     final camerasSeen = data['cameras_seen'];
-                    final confirmedDual = data['confirmed_dual'] == true;
-                    final handoff = data['handoff'] == true;
-
                     final isActive = status == 'started';
 
                     return Padding(
@@ -252,8 +249,6 @@ class _AlertsPageState extends State<AlertsPage> {
                         statusLabel: isActive ? 'ACTIVE' : 'RESOLVED',
                         isActive: isActive,
                         cameraLabel: _cameraSummary(camerasSeen),
-                        dualConfirmed: confirmedDual,
-                        handoff: handoff,
                       ),
                     );
                   }),
@@ -346,8 +341,6 @@ class _AlertCard extends StatelessWidget {
   final String statusLabel;
   final bool isActive;
   final String cameraLabel;
-  final bool dualConfirmed;
-  final bool handoff;
 
   const _AlertCard({
     required this.title,
@@ -357,8 +350,6 @@ class _AlertCard extends StatelessWidget {
     required this.statusLabel,
     required this.isActive,
     required this.cameraLabel,
-    required this.dualConfirmed,
-    required this.handoff,
   });
 
   @override
@@ -436,18 +427,6 @@ class _AlertCard extends StatelessWidget {
             runSpacing: 10,
             children: [
               _MetaBadge(icon: Icons.videocam_rounded, label: cameraLabel),
-              _MetaBadge(
-                icon: dualConfirmed
-                    ? Icons.verified_rounded
-                    : Icons.videocam_outlined,
-                label: dualConfirmed ? 'Dual confirmed' : 'Single camera',
-              ),
-              _MetaBadge(
-                icon: handoff
-                    ? Icons.swap_horiz_rounded
-                    : Icons.horizontal_rule_rounded,
-                label: handoff ? 'Handoff used' : 'No handoff',
-              ),
             ],
           ),
         ],

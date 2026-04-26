@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -21,14 +22,22 @@ class NotificationService {
   static bool _firebaseListenersInitialized = false;
 
   static Future<void> initialize() async {
-    await _requestPermission();
     await _initializeLocalNotifications();
-    await _initializeFirebaseMessaging();
-    await _logFcmToken();
+    await _safeStep(_requestPermission);
+    await _safeStep(_initializeFirebaseMessaging);
+    await _safeStep(_logFcmToken);
   }
 
   static Future<void> initializeBackground() async {
-    await _initializeLocalNotifications();
+    await _safeStep(_initializeLocalNotifications);
+  }
+
+  static Future<void> _safeStep(Future<void> Function() action) async {
+    try {
+      await action().timeout(const Duration(seconds: 5));
+    } catch (e) {
+      debugPrint('NotificationService step failed: $e');
+    }
   }
 
   static Future<void> _requestPermission() async {
@@ -47,7 +56,9 @@ class NotificationService {
     if (settings.authorizationStatus == AuthorizationStatus.authorized ||
         settings.authorizationStatus == AuthorizationStatus.provisional) {
       try {
-        await messaging.subscribeToTopic('hallguard_alerts');
+        await messaging
+            .subscribeToTopic('hallguard_alerts')
+            .timeout(const Duration(seconds: 5));
         debugPrint('Subscribed to topic: hallguard_alerts');
       } catch (e) {
         debugPrint('Failed to subscribe to topic: $e');
@@ -59,7 +70,9 @@ class NotificationService {
 
   static Future<void> _logFcmToken() async {
     try {
-      final token = await FirebaseMessaging.instance.getToken();
+      final token = await FirebaseMessaging.instance
+          .getToken()
+          .timeout(const Duration(seconds: 5));
       debugPrint('FCM TOKEN: $token');
     } catch (e) {
       debugPrint('Failed to get FCM token: $e');
@@ -104,16 +117,27 @@ class NotificationService {
         'data=${message.data}',
       );
 
-      await showFromRemoteMessage(message);
+      try {
+        await showFromRemoteMessage(message);
+      } catch (e) {
+        debugPrint('Failed to show foreground notification: $e');
+      }
     });
 
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
       debugPrint('Notification opened app: ${message.data}');
     });
 
-    final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
-    if (initialMessage != null) {
-      debugPrint('App opened from terminated state: ${initialMessage.data}');
+    try {
+      final initialMessage = await FirebaseMessaging.instance
+          .getInitialMessage()
+          .timeout(const Duration(seconds: 5));
+
+      if (initialMessage != null) {
+        debugPrint('App opened from terminated state: ${initialMessage.data}');
+      }
+    } catch (e) {
+      debugPrint('Failed to get initial message: $e');
     }
 
     _firebaseListenersInitialized = true;

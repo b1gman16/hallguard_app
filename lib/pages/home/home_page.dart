@@ -20,6 +20,7 @@ class _HomePageState extends State<HomePage> {
   Stream<QuerySnapshot<Map<String, dynamic>>>? _historyStream;
 
   static const int resolvedSeconds = 5;
+  static const Duration staleThreshold = Duration(minutes: 1);
 
   @override
   void initState() {
@@ -73,6 +74,16 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  bool _isStale(String? updatedAtIso) {
+    final updatedAt = _parseIsoToLocal(updatedAtIso);
+    if (updatedAt == null) return true;
+
+    final diff = DateTime.now().difference(updatedAt);
+    if (diff.isNegative) return false;
+
+    return diff > staleThreshold;
+  }
+
   bool _isRecentlyResolved(String rawStatus, String? updatedAtIso) {
     if (rawStatus != 'ended') return false;
 
@@ -86,6 +97,16 @@ class _HomePageState extends State<HomePage> {
   }
 
   _StatusUi _computeStatusUi(String rawStatus, String? updatedAtIso) {
+    if (_isStale(updatedAtIso)) {
+      return const _StatusUi(
+        headline: 'OFFLINE',
+        label: 'System offline',
+        accent: AppColors.danger,
+        accentSoft: AppColors.dangerSoft,
+        icon: Icons.cloud_off_rounded,
+      );
+    }
+
     if (rawStatus == 'started') {
       return const _StatusUi(
         headline: 'UNSAFE EVENT',
@@ -116,6 +137,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   String _statusDescription(String rawStatus, String? updatedAtIso) {
+    if (_isStale(updatedAtIso)) {
+      return 'HallGuard is not sending fresh updates. Monitoring status may be unavailable until the system comes back online.';
+    }
+
     if (rawStatus == 'started') {
       return 'Unsafe hallway activity needs immediate attention.';
     }
@@ -148,18 +173,6 @@ class _HomePageState extends State<HomePage> {
     return '$count Cameras In Event';
   }
 
-  int? _parseInt(dynamic value) {
-    if (value == null) return null;
-    if (value is int) return value;
-    if (value is double) return value.toInt();
-    return int.tryParse(value.toString());
-  }
-
-  String _cameraOnlineTitle(int? onlineCount, int? totalCount) {
-    if (onlineCount == null || totalCount == null) return '--';
-    return '$onlineCount/$totalCount';
-  }
-
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
@@ -189,14 +202,6 @@ class _HomePageState extends State<HomePage> {
                 .toString();
             final updatedAtIso = statusData?['updated_at']?.toString();
             final camerasSeen = statusData?['cameras_seen'];
-            final confirmedDual = statusData?['confirmed_dual'] == true;
-
-            final onlineCameraCount = _parseInt(
-              statusData?['online_camera_count'],
-            );
-            final totalCameraCount = _parseInt(
-              statusData?['total_camera_count'],
-            );
 
             final statusUi = _computeStatusUi(rawStatus, updatedAtIso);
             final updatedText = timeAgoFromIso(updatedAtIso);
@@ -286,83 +291,78 @@ class _HomePageState extends State<HomePage> {
                       child: statusSnap.hasError
                           ? const _HeroErrorState()
                           : statusSnap.connectionState ==
-                                ConnectionState.waiting
-                          ? const _HeroLoadingState()
-                          : Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: statusUi.accentSoft,
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        statusUi.icon,
-                                        size: 16,
-                                        color: statusUi.accent,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        statusUi.label.toUpperCase(),
-                                        style: TextStyle(
-                                          color: statusUi.accent,
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 18),
-                                Text(
-                                  statusUi.headline,
-                                  style: text.headlineMedium?.copyWith(
-                                    fontSize: isSmallPhone ? 28 : 32,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  description,
-                                  style: text.bodyMedium?.copyWith(
-                                    color: AppColors.textSecondary,
-                                    height: 1.5,
-                                  ),
-                                ),
-                                const SizedBox(height: 18),
-                                Wrap(
-                                  spacing: 10,
-                                  runSpacing: 10,
+                                  ConnectionState.waiting
+                              ? const _HeroLoadingState()
+                              : Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    _MetaChip(
-                                      icon: Icons.place_rounded,
-                                      label: location,
-                                    ),
-                                    _MetaChip(
-                                      icon: Icons.schedule_rounded,
-                                      label: updatedText == 'Unknown'
-                                          ? 'Updated --'
-                                          : 'Updated $updatedText',
-                                    ),
-                                    _MetaChip(
-                                      icon: Icons.videocam_rounded,
-                                      label: _cameraLabel(camerasSeen),
-                                    ),
-                                    if (confirmedDual)
-                                      const _MetaChip(
-                                        icon: Icons.verified_rounded,
-                                        label: 'Dual confirmed',
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
                                       ),
+                                      decoration: BoxDecoration(
+                                        color: statusUi.accentSoft,
+                                        borderRadius: BorderRadius.circular(999),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            statusUi.icon,
+                                            size: 16,
+                                            color: statusUi.accent,
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            statusUi.label.toUpperCase(),
+                                            style: TextStyle(
+                                              color: statusUi.accent,
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 18),
+                                    Text(
+                                      statusUi.headline,
+                                      style: text.headlineMedium?.copyWith(
+                                        fontSize: isSmallPhone ? 28 : 32,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      description,
+                                      style: text.bodyMedium?.copyWith(
+                                        color: AppColors.textSecondary,
+                                        height: 1.5,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 18),
+                                    Wrap(
+                                      spacing: 10,
+                                      runSpacing: 10,
+                                      children: [
+                                        _MetaChip(
+                                          icon: Icons.place_rounded,
+                                          label: location,
+                                        ),
+                                        _MetaChip(
+                                          icon: Icons.schedule_rounded,
+                                          label: updatedText == 'Unknown'
+                                              ? 'Updated --'
+                                              : 'Updated $updatedText',
+                                        ),
+                                        _MetaChip(
+                                          icon: Icons.videocam_rounded,
+                                          label: _cameraLabel(camerasSeen),
+                                        ),
+                                      ],
+                                    ),
                                   ],
                                 ),
-                              ],
-                            ),
                     ),
                     const SizedBox(height: 16),
                     Row(
@@ -383,16 +383,6 @@ class _HomePageState extends State<HomePage> {
                           ),
                         ),
                       ],
-                    ),
-                    const SizedBox(height: 12),
-                    _StatTile(
-                      title: _cameraOnlineTitle(
-                        onlineCameraCount,
-                        totalCameraCount,
-                      ),
-                      label: 'Cameras Online',
-                      icon: Icons.videocam_rounded,
-                      fullWidth: true,
                     ),
                     const SizedBox(height: 24),
                     Row(
@@ -545,13 +535,11 @@ class _StatTile extends StatelessWidget {
   final String title;
   final String label;
   final IconData icon;
-  final bool fullWidth;
 
   const _StatTile({
     required this.title,
     required this.label,
     required this.icon,
-    this.fullWidth = false,
   });
 
   @override
@@ -559,7 +547,6 @@ class _StatTile extends StatelessWidget {
     final text = Theme.of(context).textTheme;
 
     return Container(
-      width: fullWidth ? double.infinity : null,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.surface,
